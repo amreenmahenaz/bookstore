@@ -1,40 +1,33 @@
-from bs4 import BeautifulSoup
-import requests
+from markdownify import markdownify as md
 
-# Fetch the HTML content (Replace with your actual URL or HTML string)
-url = "https://www.geeksforgeeks.org/time-complexity-and-space-complexity/#"  # Replace with the target URL
-response = requests.get(url)
-response.raise_for_status()
+def convert_to_md(html_tag):
+    """
+    Utility Function to Convert HTML to Markdown, with specific handling for tables
+    """
+    # Check if the tag is a table
+    if html_tag.name == "table":
+        rows = html_tag.find_all("tr")
+        markdown_table = []
 
-# Parse HTML with BeautifulSoup
-soup = BeautifulSoup(response.text, "html.parser")
+        # Extract headers from the first row if it contains <th> tags
+        headers = [th.get_text(strip=True) for th in rows[0].find_all("th")]
+        if headers:
+            markdown_table.append("| " + " | ".join(headers) + " |")
+            markdown_table.append("| " + " | ".join(["---"] * len(headers)) + " |")
 
-# Find the table - this selects the first table on the page; adjust if necessary
-table = soup.find("table")
+        # Extract each row of the table
+        for row in rows[1:]:
+            cells = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
+            markdown_table.append("| " + " | ".join(cells) + " |")
 
-# Convert HTML table to Markdown
-def table_to_markdown(table):
-    rows = table.find_all("tr")
-    markdown_table = []
+        return "\n".join(markdown_table)
+    
+    # For other tags, use markdownify
+    elif html_tag.name in 'h1 h2 h3 h4 h5 h6 li p pre em'.split():
+        return str(md(str(html_tag), strip=['img']))
 
-    # Extract headers
-    headers = [th.get_text(strip=True) for th in rows[0].find_all("th")]
-    markdown_table.append("| " + " | ".join(headers) + " |")
-    markdown_table.append("| " + " | ".join(["---"] * len(headers)) + " |")
+    return ""
 
-    # Extract rows
-    for row in rows[1:]:
-        cells = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
-        markdown_table.append("| " + " | ".join(cells) + " |")
-
-    return "\n".join(markdown_table)
-
-# Convert table to markdown format
-markdown_content = table_to_markdown(table)
-
-# Save to Markdown file
-with open("table_content.md", "w", encoding="utf-8") as f:
-    f.write(markdown_content)
-
-print("Markdown table saved successfully:\n")
-print(markdown_content)  # Print to verify
+# Example usage:
+# Assuming `html_tag` is a BeautifulSoup element containing your HTML content.
+# This function will convert <table> tags to Markdown tables and other tags using markdownify.
