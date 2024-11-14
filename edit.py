@@ -3,6 +3,7 @@ from markdownify import markdownify as md
 def convert_to_md(html_tag):
     """
     Utility Function to Convert HTML to Markdown, with specific handling for tables
+    that includes row and column numbers, and a line separator after each row.
     """
     # Check if the tag is a table
     if html_tag.name == "table":
@@ -10,15 +11,21 @@ def convert_to_md(html_tag):
         markdown_table = []
 
         # Extract headers from the first row if it contains <th> tags
-        headers = [th.get_text(strip=True) for th in rows[0].find_all("th")]
+        headers = [f"{th.get_text(strip=True)}" for th in rows[0].find_all("th")]
+        
+        # Add row and column labels to headers
         if headers:
-            markdown_table.append("| " + " | ".join(headers) + " |")
-            markdown_table.append("| " + " | ".join(["---"] * len(headers)) + " |")
+            headers_with_index = ["Row\\Col"] + [f"Col {i+1}: {header}" for i, header in enumerate(headers)]
+            markdown_table.append("| " + " | ".join(headers_with_index) + " |")
+            markdown_table.append("| " + " | ".join(["---"] * len(headers_with_index)) + " |")
 
         # Extract each row of the table
-        for row in rows[1:]:
-            cells = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
+        for row_index, row in enumerate(rows[1:], start=1):
+            cells = [f"Row {row_index}"]
+            cells.extend([f"{td.get_text(strip=True)}" for td in row.find_all(["td", "th"])])
             markdown_table.append("| " + " | ".join(cells) + " |")
+            # Add separator line below each row
+            markdown_table.append("| " + " | ".join(["---"] * len(cells)) + " |")
 
         return "\n".join(markdown_table)
     
