@@ -1,55 +1,51 @@
-import requests
+from atlassian import Confluence
 from bs4 import BeautifulSoup
-from markdownify import markdownify as md
-from urllib.parse import urlparse
-import os
+import json
 
-# URL of the page to scrape
-url = "https://www.geeksforgeeks.org/time-complexity-and-space-complexity/#"
+# Initialize the Confluence API client
+confluence = Confluence(
+    url='https://your-confluence-instance.atlassian.net',
+    username='your_username',
+    password='your_api_token'
+)
 
-# Send a GET request to fetch the page content
-response = requests.get(url)
-response.raise_for_status()  # Check for HTTP errors
-
-# Parse the page content with BeautifulSoup
-soup = BeautifulSoup(response.text, "html.parser")
-
-# Extract the main content section
-content_div = soup.find("div", class_="entry-content")
-
-# Function to convert HTML table to Markdown table
-def convert_table_to_markdown(table):
-    headers = []
-    rows = []
-
-    # Extract headers
-    header_row = table.find("tr")
-    if header_row:
-        headers = [th.get_text(strip=True) for th in header_row.find_all("th")]
+# Function to fetch and parse page content, then save it to JSON
+def fetch_and_save_confluence_content(space_key):
+    pages = confluence.get_all_pages_from_space(space=space_key, start=0, limit=50, status=None, expand='body.storage')
     
-    # Extract rows
-    for row in table.find_all("tr")[1:]:  # Skip the header row
-        rows.append([td.get_text(strip=True) for td in row.find_all("td")])
-
-    # Build Markdown table
-    md_table = "| " + " | ".join(headers) + " |\n"
-    md_table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
-    for row in rows:
-        md_table += "| " + " | ".join(row) + " |\n"
+    all_page_data = []
     
-    return md_table
+    for page in pages:
+        page_data = {}
+        page_data['page_id'] = page['id']
+        page_data['title'] = page['title']
+        
+        # Get HTML content of the page
+        html_content = page['body']['storage']['value']
+        
+        # Parse HTML content using BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Extract all tags and their attributes
+        tags_data = []
+        for tag in soup.find_all(True):
+            tags_data.append({
+                'tag': tag.name,
+                'attributes': tag.attrs,
+                'text': tag.get_text(strip=True)
+            })
+        
+        # Add parsed data to the page data
+        page_data['tags'] = tags_data
+        all_page_data.append(page_data)
+    
+    # Save all data to a JSON file
+    output_file = "confluence_page_data.json"
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(all_page_data, f, ensure_ascii=False, indent=4)
 
-# Find and convert tables in the content to Markdown format
-for table in content_div.find_all("table"):
-    markdown_table = convert_table_to_markdown(table)
-    table.replace_with(BeautifulSoup(markdown_table, "html.parser"))
+    print(f"Data saved successfully to {output_file}")
 
-# Convert the entire content to Markdown
-markdown_content = md(str(content_div))
-
-# Save to a Markdown file
-output_filename = "geeksforgeeks_time_space_complexity.md"
-with open(output_filename, "w", encoding="utf-8") as f:
-    f.write(markdown_content)
-
-print(f"Content saved to {output_filename}")
+# Define the Confluence space key and save content
+space_key = 'YOUR_SPACE_KEY'
+fetch_and_save_confluence_content(space_key)
