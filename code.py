@@ -1,23 +1,22 @@
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
-from atlassian import Confluence
 import requests
 
-# Create a session with retries
-session = requests.Session()
-retry = Retry(
-    total=5,
-    backoff_factor=1,
-    status_forcelist=[502, 503, 504]
-)
-adapter = HTTPAdapter(max_retries=retry)
-session.mount('https://', adapter)
+# Define the URL and Bearer token
+url = 'https://api.example.com/your-endpoint'
+token = 'YOUR_BEARER_TOKEN'
 
-# Initialize Confluence API client using API token
-confluence = Confluence(
-    url='https://your-confluence-instance.atlassian.net',
-    username='your_username',  # Use your Atlassian account email here
-    password='your_api_token',  # Use your API token here
-    session=session,
-    verify_ssl=False  # Optionally disable SSL if you encounter SSL errors
-)
+# Set up headers with the Bearer token
+headers = {
+    'Authorization': f'Bearer {token}',
+    'Content-Type': 'application/json'  # Optional, depending on the API
+}
+
+# Make the GET request
+response = requests.get(url, headers=headers)
+
+# Check the response
+if response.status_code == 200:
+    print("Request was successful.")
+    print("Response data:", response.json())  # Assuming the response is in JSON format
+else:
+    print(f"Request failed with status code {response.status_code}")
+    print("Error response:", response.text)
