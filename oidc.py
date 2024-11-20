@@ -3,6 +3,9 @@ import requests
 
 def generate_oidc_token():
     try:
+        suu_command = ["suu", "-tr", "aiverse-dev", "zdcuisvc"]
+        print(f"Running command: {' '.join(suu_command)}")
+        subprocess.run(suu_command, check=True, shell=True)
         # Step 1: Generate the client assertion ($TOKEN)
         helper_script = "/ms/dist/sec/PROJ/OAuthClientManager-api/2023.06.21-1/common/bin/oacmhelper.py"
         registration_id = "uid:zdcuisvc:73564.dev.WMREGID11975-cpschatuisvc"
