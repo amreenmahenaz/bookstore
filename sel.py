@@ -1,53 +1,24 @@
-import os
-import json
-from atlassian import Confluence
-from markdownify import markdownify as md
+#!/bin/bash
 
-# Fetch credentials securely from environment variables
-username = os.getenv("CONFLUENCE_USERNAME")
-password = os.getenv("CONFLUENCE_PASSWORD")
-base_url = "https://confluence.corp.etradegrp.com"
+# Exit immediately if a command exits with a non-zero status
+set -e
 
-# Initialize the Confluence API client
-confluence = Confluence(
-    url=base_url,
-    username=username,
-    password=password
-)
+# Step 1: Set the REGISTRATION_ID
+REGISTRATION_ID="uid:zdcuisvc:73564.dev.WMREGID11975-cpschatuisvc"
 
-# Function to fetch all pages and save as Markdown files
-def fetch_all_pages_as_markdown(space_key, output_dir="o/p"):
-    # Ensure the output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Fetch all pages in the space
-    pages = confluence.get_all_pages_from_space(
-        space=space_key,
-        start=0,
-        limit=100,
-        status=None,
-        expand="body.storage",
-        content_type="page"
-    )
-    
-    for page in pages:
-        page_id = page['id']
-        title = page['title']
-        html_content = page['body']['storage']['value']
-        
-        # Convert HTML to Markdown (preserving tables)
-        markdown_content = md(html_content, heading_style="ATX")
-        
-        # Generate a sanitized filename based on the title
-        sanitized_title = "".join(c for c in title if c.isalnum() or c in (" ", "_", "-")).replace(" ", "_")
-        markdown_filename = os.path.join(output_dir, f"{sanitized_title}.md")
-        
-        # Save the Markdown content to a file
-        with open(markdown_filename, "w", encoding="utf-8") as f:
-            f.write(markdown_content)
-            print(f"Saved page '{title}' as Markdown to {markdown_filename}")
+# Step 2: Define alias for jq (optional, depending on your environment)
+alias jq="/ms/dist/3rd/PROJ/jq/1.5/exec/bin/jq"
 
-# Example usage
-if __name__ == "__main__":
-    space_key = "YOUR_SPACE_KEY"  # Replace with your Confluence space key
-    fetch_all_pages_as_markdown(space_key)
+# Step 3: Generate the TOKEN using the helper script
+TOKEN=$(/ms/dist/sec/PROJ/OAuthClientManager-api/2023.06.21-1/common/bin/oacmhelper.py ops-dev $REGISTRATION_ID jwt-bearer)
+
+# Step 4: Make the curl request to generate the OIDC token
+curl -XPOST -vv \
+    -d "scope=urn:api:ops-dev.42e54bc1-2ced-4578-b7f7-3737d61fca2/.app" \
+    -d "grant_type=client_credentials" \
+    -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \
+    -d "client_assertion=$TOKEN" \
+    https://auth-oidc-dev.ms.com/as/token.oauth2 | jq
+
+# Notify the user of successful execution
+echo "OIDC token request completed successfully."
