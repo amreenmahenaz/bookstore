@@ -1,90 +1,53 @@
-import unittest
-from unittest.mock import MagicMock, patch
 import os
 import json
-import re
+from atlassian import Confluence
+from markdownify import markdownify as md
 
-# Mocking the Confluence object
-class MockConfluence:
-    def get_page_id(self, space, title):
-        if title == "Existing Page":
-            return "12345"  # Mock page ID
-        return None  # Simulate a non-existing page
+# Fetch credentials securely from environment variables
+username = os.getenv("CONFLUENCE_USERNAME")
+password = os.getenv("CONFLUENCE_PASSWORD")
+base_url = "https://confluence.corp.etradegrp.com"
 
-    def get_page_by_id(self, page_id, expand):
-        if page_id == "12345":
-            return {
-                "id": "12345",
-                "title": "Existing Page",
-                "body": {
-                    "storage": {
-                        "value": "<p>Page content in HTML</p>",
-                        "representation": "storage"
-                    }
-                },
-                "metadata": {
-                    "labels": [{"name": "important"}]
-                }
-            }
-        return None  # Simulate a missing page ID
+# Initialize the Confluence API client
+confluence = Confluence(
+    url=base_url,
+    username=username,
+    password=password
+)
 
+# Function to fetch all pages and save as Markdown files
+def fetch_all_pages_as_markdown(space_key, output_dir="o/p"):
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Fetch all pages in the space
+    pages = confluence.get_all_pages_from_space(
+        space=space_key,
+        start=0,
+        limit=100,
+        status=None,
+        expand="body.storage",
+        content_type="page"
+    )
+    
+    for page in pages:
+        page_id = page['id']
+        title = page['title']
+        html_content = page['body']['storage']['value']
+        
+        # Convert HTML to Markdown (preserving tables)
+        markdown_content = md(html_content, heading_style="ATX")
+        
+        # Generate a sanitized filename based on the title
+        sanitized_title = "".join(c for c in title if c.isalnum() or c in (" ", "_", "-")).replace(" ", "_")
+        markdown_filename = os.path.join(output_dir, f"{sanitized_title}.md")
+        
+        # Save the Markdown content to a file
+        with open(markdown_filename, "w", encoding="utf-8") as f:
+            f.write(markdown_content)
+            print(f"Saved page '{title}' as Markdown to {markdown_filename}")
 
-# Import the function to test
-from your_script_name import get_page_content_and_save  # Replace `your_script_name` with your file name
-
-
-class TestWebScraper(unittest.TestCase):
-    @patch('your_script_name.confluence', new_callable=MockConfluence)
-    def test_get_page_content_and_save_success(self, mock_confluence):
-        # Test case for a valid page
-        space = "TEST_SPACE"
-        title = "Existing Page"
-
-        # Call the function
-        filename = get_page_content_and_save(space, title)
-
-        # Check that the file is created
-        self.assertTrue(os.path.exists(filename), "JSON file was not created.")
-
-        # Read and validate file content
-        with open(filename, "r", encoding="utf-8") as f:
-            content = json.load(f)
-            self.assertEqual(content["id"], "12345")
-            self.assertEqual(content["title"], "Existing Page")
-            self.assertIn("body", content)
-            self.assertIn("metadata", content)
-
-        # Clean up
-        os.remove(filename)
-
-    @patch('your_script_name.confluence', new_callable=MockConfluence)
-    def test_get_page_content_and_save_not_found(self, mock_confluence):
-        # Test case for a non-existent page
-        space = "TEST_SPACE"
-        title = "Non-Existent Page"
-
-        # Call the function
-        filename = get_page_content_and_save(space, title)
-
-        # Verify the result is None and no file is created
-        self.assertIsNone(filename, "Function should return None for non-existent pages.")
-
-    @patch('your_script_name.confluence', new_callable=MockConfluence)
-    def test_filename_sanitization(self, mock_confluence):
-        # Test case for filename sanitization
-        space = "TEST_SPACE"
-        title = "Page with Invalid/Characters"
-
-        # Call the function
-        filename = get_page_content_and_save(space, title)
-
-        # Verify sanitized filename
-        expected_filename = re.sub(r'[^\w\s-]', '', title).replace(' ', '_') + "_content.json"
-        self.assertTrue(os.path.exists(expected_filename), "Sanitized filename was not created.")
-
-        # Clean up
-        os.remove(expected_filename)
-
-
+# Example usage
 if __name__ == "__main__":
-    unittest.main()
+    space_key = "YOUR_SPACE_KEY"  # Replace with your Confluence space key
+    fetch_all_pages_as_markdown(space_key)
