@@ -1,24 +1,19 @@
-#!/bin/bash
+if html_tag.name == "table":
+    rows = html_tag.find_all("tr")
+    markdown_table = []
 
-# Exit immediately if a command exits with a non-zero status
-set -e
+    # Extract headers from the first row if it contains <th> tags
+    headers = [th.get_text(strip=True) for th in rows[0].find_all("th")] if rows else []
 
-# Step 1: Set the REGISTRATION_ID
-REGISTRATION_ID="uid:zdcuisvc:73564.dev.WMREGID11975-cpschatuisvc"
+    if headers:
+        # Add column headers with separator line
+        markdown_table.append("| " + " | ".join(headers) + " |")
+        markdown_table.append("|" + "|".join(["---"] * len(headers)) + "|")
+        
+        # Extract each row of the table
+        for row in rows[1:]:  # Skip the header row
+            cells = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
+            markdown_table.append("| " + " | ".join(cells) + " |")
 
-# Step 2: Define alias for jq (optional, depending on your environment)
-alias jq="/ms/dist/3rd/PROJ/jq/1.5/exec/bin/jq"
-
-# Step 3: Generate the TOKEN using the helper script
-TOKEN=$(/ms/dist/sec/PROJ/OAuthClientManager-api/2023.06.21-1/common/bin/oacmhelper.py ops-dev $REGISTRATION_ID jwt-bearer)
-
-# Step 4: Make the curl request to generate the OIDC token
-curl -XPOST -vv \
-    -d "scope=urn:api:ops-dev.42e54bc1-2ced-4578-b7f7-3737d61fca2/.app" \
-    -d "grant_type=client_credentials" \
-    -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \
-    -d "client_assertion=$TOKEN" \
-    https://auth-oidc-dev.ms.com/as/token.oauth2 | jq
-
-# Notify the user of successful execution
-echo "OIDC token request completed successfully."
+    # Join all rows with a newline
+    return "\n".join(markdown_table)
