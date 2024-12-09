@@ -1,9 +1,8 @@
-with open(csv_file_path, mode="r", encoding="utf-8") as file:
-    reader = csv.DictReader(file)  # Use DictReader to access columns by name
-    for row in reader:
-        # Extract values from the current row
-        key = row["key"]
-        content_vector = row["content_vector"]
-        source = row["source"]
-        content = row["content"]
-        active = row["active"]
+class ScenHistVol:
+    def __init__(self, db_host='localhost', db_name='volatility_db', db_user='user', db_password='password'):
+        # Initialize database connection parameters
+        self.db_host = db_host
+        self.db_name = db_name
+        self.db_user = db_user
+        self.db_password = db_password
+
