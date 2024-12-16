@@ -54,7 +54,7 @@ class TestPreSyncEodDumpFile(unittest.TestCase):
         
         # Verify calls
         mock_get_prev_date.assert_called_once()
-        mock_sync.assert_called_once_with('20241217', mock.ANY, '/dummy/input', 3)
+        mock_sync.assert_called_once_with('20241217', unittest.mock.ANY, '/dummy/input', 3)
 
 if __name__ == '__main__':
     unittest.main()
