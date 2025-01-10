@@ -1,7 +1,3 @@
-import unittest
-from unittest.mock import patch, call, MagicMock
-from datetime import datetime
-from PreSyncEodDumpFile import main, sync_and_clean_vox_eod_dump_file, printlog  # Update module name
 
 
 class TestPreSyncEodDumpFile(unittest.TestCase):
