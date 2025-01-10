@@ -1,40 +1,80 @@
-from markdownify import markdownify as md
+import unittest
+from unittest.mock import patch, call, MagicMock
+from datetime import datetime
+from PreSyncEodDumpFile import main, sync_and_clean_vox_eod_dump_file, printlog  # Update to actual file name
+import logging
 
-def convert_to_md(html_tag):
-    """
-    Utility Function to Convert HTML to Markdown, with specific handling for tables
-    that includes row and column numbers, and a line separator after each row.
-    """
-    # Check if the tag is a table
-    if html_tag.name == "table":
-        rows = html_tag.find_all("tr")
-        markdown_table = []
 
-        # Extract headers from the first row if it contains <th> tags
-        headers = [f"{th.get_text(strip=True)}" for th in rows[0].find_all("th")]
-        
-        # Add row and column labels to headers
-        if headers:
-            headers_with_index = ["Row\\Col"] + [f"Col {i+1}: {header}" for i, header in enumerate(headers)]
-            markdown_table.append("| " + " | ".join(headers_with_index) + " |")
-            markdown_table.append("| " + " | ".join(["---"] * len(headers_with_index)) + " |")
+class TestPreSyncEodDumpFile(unittest.TestCase):
+    @patch("os.path.join")
+    @patch("subprocess.run")
+    def test_sync_and_clean_vox_eod_dump_file(self, mock_subprocess_run, mock_path_join):
+        # Mock directory path joining
+        mock_path_join.side_effect = lambda *args: "/".join(args)
 
-        # Extract each row of the table
-        for row_index, row in enumerate(rows[1:], start=1):
-            cells = [f"Row {row_index}"]
-            cells.extend([f"{td.get_text(strip=True)}" for td in row.find_all(["td", "th"])])
-            markdown_table.append("| " + " | ".join(cells) + " |")
-            # Add separator line below each row
-            markdown_table.append("| " + " | ".join(["---"] * len(cells)) + " |")
+        # Mock subprocess.run to simulate command execution
+        mock_subprocess_run.return_value = MagicMock(stdout="Command executed successfully")
 
-        return "\n".join(markdown_table)
-    
-    # For other tags, use markdownify
-    elif html_tag.name in 'h1 h2 h3 h4 h5 h6 li p pre em'.split():
-        return str(md(str(html_tag), strip=['img']))
+        # Call the function
+        sync_and_clean_vox_eod_dump_file("20250108", "20250109", "/mock/input/dir", 5)
 
-    return ""
+        # Assertions to validate subprocess commands
+        clean_cmd = "find /mock/input/dir/2025/01/08 -mtime +5 -exec rm -f {} \\;"
+        mkdir_cmd = "mkdir -p /mock/input/dir/2025/01/09"
+        rsync_cmd = "rsync -trp /mock/input/dir/2025/01/08/ /mock/input/dir/2025/01/09/"
 
-# Example usage:
-# Assuming `html_tag` is a BeautifulSoup element containing your HTML content.
-# This function will convert <table> tags to Markdown tables and other tags using markdownify.
+        mock_subprocess_run.assert_has_calls([
+            call(clean_cmd, shell=True),
+            call(mkdir_cmd, shell=True),
+            call(rsync_cmd, shell=True, capture_output=True, text=True)
+        ])
+
+    @patch("datetime.datetime")
+    @patch("builtins.print")
+    def test_printlog(self, mock_print, mock_datetime):
+        # Mock current time
+        mock_datetime.now.return_value = datetime(2025, 1, 9, 12, 0, 0)
+
+        # Call printlog
+        printlog("Test log message")
+
+        # Assert print output
+        mock_print.assert_called_once_with("2025-01-09 12:00:00: Test log message")
+
+    @patch("argparse.ArgumentParser.parse_args")
+    @patch("PreSyncEodDumpFile.sync_and_clean_vox_eod_dump_file")  # Update with actual module name
+    def test_main(self, mock_sync_and_clean, mock_parse_args):
+        # Mock command-line arguments
+        mock_parse_args.return_value = MagicMock(input="/mock/input/dir", keep_days=5)
+
+        # Mock datetime
+        with patch("datetime.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2025, 1, 9)
+            mock_datetime.strftime = datetime.strftime
+
+            # Call main
+            main()
+
+            # Expected dates
+            previous_working_date = "20250108"
+            today = "20250109"
+
+            # Assert the sync_and_clean_vox_eod_dump_file function is called with expected arguments
+            mock_sync_and_clean.assert_called_once_with(
+                previous_working_date, today, "/mock/input/dir", 5
+            )
+
+    @patch("argparse.ArgumentParser.parse_args")
+    def test_main_invalid_arguments(self, mock_parse_args):
+        # Mock invalid arguments
+        mock_parse_args.return_value = MagicMock(input=None, keep_days=5)
+
+        # Mock logging
+        with patch("PreSyncEodDumpFile.logging") as mock_logging:  # Update with actual module name
+            with self.assertRaises(SystemExit):
+                main()
+            mock_logging.error.assert_called_once_with("Input directory is required")
+
+
+if __name__ == "__main__":
+    unittest.main()
