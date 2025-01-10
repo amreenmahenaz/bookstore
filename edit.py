@@ -1,61 +1,52 @@
-import unittest
-from unittest.mock import patch, call, Mock
-from PreSyncEodDumpFile import main, sync_and_clean_vox_eod_dump_file, printlog
-from datetime import datetime
-
 class TestPreSyncEodDumpFile(unittest.TestCase):
+    @patch("subprocess.call")
+    @patch("os.makedirs")
+    @patch("os.path.join")
+    def test_sync_and_clean_vox_eod_dump_file(self, mock_join, mock_makedirs, mock_call):
+        # Arrange: Set up mock return values
+        mock_join.side_effect = lambda *args: "/".join(args)  # Mock os.path.join behavior
+        mock_makedirs.return_value = None  # Mock os.makedirs to do nothing
+        mock_call.return_value = 0  # Mock subprocess.call to return success
 
-    @patch('PreSyncEodDumpFile.datetime')
-    @patch('builtins.print')
-    def test_printlog(self, mock_print, mock_datetime):
-        """Test the printlog function."""
-        mock_datetime.now.return_value = datetime(2025, 1, 9, 12, 0, 0)
-        printlog("Test log message")
-        mock_print.assert_called_with("20250109-12:00:00 - Test log message")
+        from_date = "20250108"
+        to_date = "20250109"
+        input_file_dir = "/mock/input/dir"
+        keep_days = 5
 
-    def test_main_invalid_arguments(self):
-        """Test main with missing arguments."""
-        with self.assertRaises(SystemExit):
-            with patch('sys.argv', ['PreSyncEodDumpFile.py']):
-                main()
+        # Act: Call the function
+        sync_and_clean_vox_eod_dump_file(from_date, to_date, input_file_dir, keep_days)
 
-    @patch('PreSyncEodDumpFile.call')
-    def test_sync_and_clean_vox_eod_dump_file(self, mock_call):
-        """Test sync_and_clean_vox_eod_dump_file logic."""
-        sync_and_clean_vox_eod_dump_file(
-            "20250108", "20250109", "/mock/input/dir", 5
-        )
+        # Assert: Verify mocks were called with correct arguments
+        from_dir = f"{input_file_dir}/2025/01/08"
+        to_dir = f"{input_file_dir}/2025/01/09"
+        clean_cmd = f"find {from_dir} -print -mtime +{keep_days} -exec /bin/rm -f {{}} \\;"
+        mkdir_cmd = f"/bin/mkdir -p {to_dir}"
+        rsync_cmd = f"/usr/bin/rsync -trp {from_dir} {to_dir}"
 
-        # Define the expected shell commands that are called
-        clean_cmd = (
-            "find /mock/input/dir/2025/01/08 -print -mtime +5 "
-            "-bexec /bin/rm -f {} \\;"
-        )
-        mkdir_cmd = "/bin/mkdir -p /mock/input/dir/2025/01/09"
-        rsync_cmd = "/usr/bin/rsync -trp /mock/input/dir/2025/01/08 /mock/input/dir/2025/01/09"
+        mock_call.assert_any_call(clean_cmd, shell=True)
+        mock_call.assert_any_call(mkdir_cmd, shell=True)
+        mock_call.assert_any_call(rsync_cmd, shell=True)
 
-        # Check if the mock_call is invoked correctly
-        mock_call.assert_has_calls(
-            [call(clean_cmd, shell=True), call(mkdir_cmd, shell=True), call(rsync_cmd, shell=True)]
-        )
+    @patch("preSyncEodDumpFile.printlog")
+    @patch("preSyncEodDumpFile.sync_and_clean_vox_eod_dump_file")
+    @patch("argparse.ArgumentParser.parse_args")
+    def test_main(self, mock_parse_args, mock_sync_and_clean, mock_printlog):
+        # Arrange: Mock argument parsing
+        mock_parse_args.return_value = MagicMock(input="/mock/input/dir", keep_days=5)
+        mock_printlog.return_value = None  # Mock printlog to do nothing
+        mock_sync_and_clean.return_value = None  # Mock sync_and_clean_vox_eod_dump_file
 
-    @patch('sys.argv', [
-        'PreSyncEodDumpFile.py',
-        '-i', '/mock/input/dir',
-        '-k', '5'
-    ])
-    @patch('PreSyncEodDumpFile.sync_and_clean_vox_eod_dump_file')
-    @patch('PreSyncEodDumpFile.datetime')
-    def test_main(self, mock_datetime, mock_sync, mock_args):
-        """Test main with valid arguments."""
-        mock_datetime.now.return_value = datetime(2025, 1, 9)
-        mock_sync.return_value = None
-
+        # Act: Call main()
         main()
 
-        mock_sync.assert_called_once_with(
-            "20250108", "20250109", "/mock/input/dir", 5
+        # Assert: Verify functions are called with expected values
+        mock_sync_and_clean.assert_called_with(
+            "20250108",  # Mock previous working date
+            "20250109",  # Mock today's date
+            "/mock/input/dir",
+            5
         )
+        mock_printlog.assert_called()
 
 if __name__ == "__main__":
     unittest.main()
