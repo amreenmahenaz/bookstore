@@ -1,52 +1,60 @@
-class TestPreSyncEodDumpFile(unittest.TestCase):
-    @patch("subprocess.call")
-    @patch("os.makedirs")
-    @patch("os.path.join")
-    def test_sync_and_clean_vox_eod_dump_file(self, mock_join, mock_makedirs, mock_call):
-        # Arrange: Set up mock return values
-        mock_join.side_effect = lambda *args: "/".join(args)  # Mock os.path.join behavior
-        mock_makedirs.return_value = None  # Mock os.makedirs to do nothing
-        mock_call.return_value = 0  # Mock subprocess.call to return success
+import unittest
+from unittest.mock import patch, MagicMock
+from MQsubmit import connect_to_mq, disconnect_from_mq, process_file, main
 
-        from_date = "20250108"
-        to_date = "20250109"
-        input_file_dir = "/mock/input/dir"
-        keep_days = 5
 
-        # Act: Call the function
-        sync_and_clean_vox_eod_dump_file(from_date, to_date, input_file_dir, keep_days)
+class TestMQSubmit(unittest.TestCase):
+    @patch("pymqi.connect")
+    @patch("pymqi.Queue")
+    def test_connect_to_mq_success(self, mock_queue, mock_connect):
+        mock_qmgr = MagicMock()
+        mock_queue_instance = MagicMock()
+        mock_connect.return_value = mock_qmgr
+        mock_queue.return_value = mock_queue_instance
 
-        # Assert: Verify mocks were called with correct arguments
-        from_dir = f"{input_file_dir}/2025/01/08"
-        to_dir = f"{input_file_dir}/2025/01/09"
-        clean_cmd = f"find {from_dir} -print -mtime +{keep_days} -exec /bin/rm -f {{}} \\;"
-        mkdir_cmd = f"/bin/mkdir -p {to_dir}"
-        rsync_cmd = f"/usr/bin/rsync -trp {from_dir} {to_dir}"
+        qmgr, queue = connect_to_mq("QM1", "QUEUE1")
+        mock_connect.assert_called_once_with("QM1")
+        mock_queue.assert_called_once_with(mock_qmgr, "QUEUE1")
+        self.assertEqual(qmgr, mock_qmgr)
+        self.assertEqual(queue, mock_queue_instance)
 
-        mock_call.assert_any_call(clean_cmd, shell=True)
-        mock_call.assert_any_call(mkdir_cmd, shell=True)
-        mock_call.assert_any_call(rsync_cmd, shell=True)
+    @patch("pymqi.connect", side_effect=Exception("Connection failed"))
+    def test_connect_to_mq_failure(self, mock_connect):
+        with self.assertRaises(SystemExit):
+            connect_to_mq("QM1", "QUEUE1")
 
-    @patch("preSyncEodDumpFile.printlog")
-    @patch("preSyncEodDumpFile.sync_and_clean_vox_eod_dump_file")
-    @patch("argparse.ArgumentParser.parse_args")
-    def test_main(self, mock_parse_args, mock_sync_and_clean, mock_printlog):
-        # Arrange: Mock argument parsing
-        mock_parse_args.return_value = MagicMock(input="/mock/input/dir", keep_days=5)
-        mock_printlog.return_value = None  # Mock printlog to do nothing
-        mock_sync_and_clean.return_value = None  # Mock sync_and_clean_vox_eod_dump_file
+    @patch("pymqi.Queue.close")
+    @patch("pymqi.connect")
+    def test_disconnect_from_mq_success(self, mock_connect, mock_close):
+        mock_qmgr = MagicMock()
+        mock_queue = MagicMock()
+        disconnect_from_mq(mock_queue, mock_qmgr)
+        mock_queue.close.assert_called_once()
+        mock_qmgr.disconnect.assert_called_once()
 
-        # Act: Call main()
-        main()
+    @patch("pymqi.Queue.close", side_effect=Exception("Close failed"))
+    def test_disconnect_from_mq_failure(self, mock_close):
+        mock_queue = MagicMock()
+        with self.assertRaises(Exception):
+            disconnect_from_mq(mock_queue, None)
 
-        # Assert: Verify functions are called with expected values
-        mock_sync_and_clean.assert_called_with(
-            "20250108",  # Mock previous working date
-            "20250109",  # Mock today's date
-            "/mock/input/dir",
-            5
-        )
-        mock_printlog.assert_called()
+    @patch("builtins.open", create=True)
+    @patch("pymqi.MQMessage")
+    @patch("pymqi.PMO")
+    @patch("pymqi.Queue.put")
+    def test_process_file_success(self, mock_put, mock_pmo, mock_msg, mock_open):
+        mock_file_handle = MagicMock()
+        mock_open.return_value.__enter__.return_value = mock_file_handle
+        mock_file_handle.read.return_value = "test_message"
+        mock_queue = MagicMock()
+        process_file("test_file.txt", mock_queue, MagicMock())
+        mock_open.assert_called_once_with("test_file.txt", "r")
+        mock_msg.assert_called_once()
+        mock_pmo.assert_called_once()
+        mock_put.assert_called_once()
 
-if __name__ == "__main__":
-    unittest.main()
+    @patch("builtins.open", side_effect=FileNotFoundError)
+    def test_process_file_file_not_found(self, mock_open):
+        mock_queue = MagicMock()
+        with self.assertRaises(SystemExit):
+           
