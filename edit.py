@@ -4,9 +4,9 @@ from MQsubmit import connect_to_mq, disconnect_from_mq, process_file, main
 
 
 class TestMQSubmit(unittest.TestCase):
-    @patch("pymqi.connect")
     @patch("pymqi.Queue")
-    def test_connect_to_mq_success(self, mock_queue, mock_connect):
+    @patch("pymqi.connect")
+    def test_connect_to_mq_success(self, mock_connect, mock_queue):
         mock_qmgr = MagicMock()
         mock_queue_instance = MagicMock()
         mock_connect.return_value = mock_qmgr
@@ -40,7 +40,7 @@ class TestMQSubmit(unittest.TestCase):
         with self.assertRaises(Exception):
             disconnect_from_mq(mock_queue, None)
 
-    @patch("builtins.open", mock_open(read_data="Test message"))
+    @patch("builtins.open", new_callable=mock_open, read_data="Test message")
     @patch("pymqi.Queue.put")
     @patch("pymqi.PMO")
     def test_process_file_success(self, mock_pmo, mock_put, mock_open_file):
