@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock, mock_open
 from MQsubmit import connect_to_mq, disconnect_from_mq, process_file, main
 
+
 class TestMQSubmit(unittest.TestCase):
     @patch("pymqi.connect")
     @patch("pymqi.Queue")
