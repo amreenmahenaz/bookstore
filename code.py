@@ -1,62 +1,100 @@
-import os
-import sys
-import shutil
-import datetime
-import argparse
-import subprocess
+import unittest
+from unittest.mock import patch, MagicMock, mock_open
+import ms.soap
+import getPlanetBaac
 
-# Constants
-KEEP_DAYS_DEFAULT = 5
 
-def usage():
-    print("""
-Vol remove arbitrage process to pre-sync previous business day's EOD dump file.
-Usage: script.py -i <vox report file directory> 
-       [-k <number of business days> Keeps stale files. Default is 5]
-""")
-    sys.exit(-1)
+class TestGetPlanetBaac(unittest.TestCase):
 
-def print_log(log_message):
-    dt = datetime.datetime.now().strftime("%Y%m%d-%H:%M:%S")
-    print(f"{dt} - {log_message}")
+    @patch('getPlanetBaac.ms.soap.client.TCPConnection')
+    def test_make_api_call_success(self, mock_tcp_connection):
+        # Mock connection and response
+        mock_connection = MagicMock()
+        mock_response = MagicMock()
+        mock_response.body = "<response>success</response>"
+        mock_connection.sendrequest.return_value = mock_response
 
-def sync_and_clean_vox_eod_dump_file(from_date, to_date, input_file_dir, keep_days):
-    from_year, from_month, from_day = from_date[:4], from_date[4:6], from_date[6:8]
-    to_year, to_month, to_day = to_date[:4], to_date[4:6], to_date[6:8]
+        mock_tcp_connection.return_value = mock_connection
 
-    from_dir = os.path.join(input_file_dir, from_year, from_month, from_day)
-    clean_cmd = f"find {from_dir} -mtime +{keep_days} -exec rm -f {{}} \\;"
-    print_log(f"Executing clean command: {clean_cmd}")
-    subprocess.run(clean_cmd, shell=True)
+        # Call the method
+        getPlanetBaac.make_api_call('2023-12-01', 'output.csv')
 
-    to_dir = os.path.join(input_file_dir, to_year, to_month, to_day)
-    mkdir_cmd = f"mkdir -p {to_dir}"
-    print_log(f"Executing mkdir command: {mkdir_cmd}")
-    subprocess.run(mkdir_cmd, shell=True)
+        # Assertions
+        mock_tcp_connection.assert_called_once_with(
+            getPlanetBaac.API_BASE_URL, 
+            getPlanetBaac.PORT, 
+            getPlanetBaac.auth_provider, 
+            timeout=30
+        )
+        mock_connection.sendrequest.assert_called_once()
 
-    rsync_cmd = f"rsync -trp {from_dir}/ {to_dir}/"
-    print_log(f"Executing rsync command: {rsync_cmd}")
-    result = subprocess.run(rsync_cmd, shell=True, capture_output=True, text=True)
-    print_log(result.stdout)
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('csv.writer')
+    def test_save_response_to_csv(self, mock_csv_writer, mock_open_file):
+        # Mock data
+        data = [
+            {
+                'effective_date': '2023-12-01',
+                'cons_div': 'division',
+                'taps_account': 'account'
+            }
+        ]
+        filename = 'output.csv'
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-i", required=True, help="vox report file directory")
-    parser.add_argument("-k", type=int, default=KEEP_DAYS_DEFAULT, help="Number of business days to keep stale files")
+        # Call the method
+        getPlanetBaac.save_response_to_csv(data, filename)
 
-    args = parser.parse_args()
+        # Assertions
+        mock_open_file.assert_called_once_with(filename, 'w', newline='', encoding='utf-8')
+        mock_csv_writer.assert_called_once()
+        mock_csv_writer().writerow.assert_called()
 
-    input_file_dir = args.i
-    keep_days = args.k
+    @patch('getPlanetBaac.datetime')
+    def test_handle_date_arguments_with_date(self, mock_datetime):
+        # Mock date
+        mock_datetime.strptime.return_value = mock_datetime(2023, 12, 1)
+        mock_datetime.now.return_value = mock_datetime(2023, 12, 3)
 
-    if not os.path.exists(input_file_dir):
-        usage()
+        date_str = '2023-12-01'
+        query_date, format_date = getPlanetBaac.handle_date_arguments(date_str)
 
-    today = datetime.datetime.now().strftime("%Y%m%d")
-    print_log(f"Today is {today}. Sync EOD dump from previous dates.")
+        # Assertions
+        self.assertEqual(query_date, '2023-12-01')
+        self.assertEqual(format_date, '20231201')
 
-    previous_working_date = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y%m%d")
-    sync_and_clean_vox_eod_dump_file(previous_working_date, today, input_file_dir, keep_days)
+    @patch('getPlanetBaac.datetime')
+    def test_handle_date_arguments_without_date(self, mock_datetime):
+        # Mock date
+        mock_datetime.now.return_value = mock_datetime(2023, 12, 3)
 
-if __name__ == "__main__":
-    main()
+        query_date, format_date = getPlanetBaac.handle_date_arguments(None)
+
+        # Assertions
+        self.assertEqual(query_date, '2023-12-01')
+        self.assertEqual(format_date, '20231201')
+
+    @patch('getPlanetBaac.make_api_call')
+    @patch('getPlanetBaac.generate_output_filename')
+    @patch('getPlanetBaac.handle_date_arguments')
+    @patch('getPlanetBaac.parse_arguments')
+    def test_main(self, mock_parse_args, mock_handle_date_args, mock_generate_output_filename, mock_make_api_call):
+        # Mock arguments
+        mock_args = MagicMock()
+        mock_args.date = '2023-12-01'
+        mock_args.output = 'output.csv'
+        mock_parse_args.return_value = mock_args
+        mock_handle_date_args.return_value = ('2023-12-01', '20231201')
+        mock_generate_output_filename.return_value = 'output.csv'
+
+        # Call the main function
+        getPlanetBaac.main()
+
+        # Assertions
+        mock_parse_args.assert_called_once()
+        mock_handle_date_args.assert_called_once_with('2023-12-01')
+        mock_generate_output_filename.assert_called_once_with('output.csv', '20231201')
+        mock_make_api_call.assert_called_once_with('2023-12-01', 'output.csv')
+
+
+if __name__ == '__main__':
+    unittest.main()
