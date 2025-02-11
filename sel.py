@@ -1,73 +1,64 @@
-import unittest
+import pytest
 from unittest.mock import patch, MagicMock
-import datetime
-import subprocess
-import sys
-from dateutil.rrule import WEEKLY, rrule
-from dateutil.relativedelta import relativedelta, FR
-sys.path.append(".")  # Ensures current directory is in path
-import preSyncEodDumpFile as script  # Correctly import the target module
+from legacySystsModel import shutdown
 
-class TestPreSyncEodDumpFile(unittest.TestCase):
+
+@pytest.fixture
+def mock_memory():
+    """Fixture to mock memory structure."""
+    return {
+        "region": {
+            "systs_list": ["sys1", "sys2"],
+            "pkr_list": ["pkr1", "pkr2"],
+            "entityMapping": {
+                "entity1": "task1.task2",
+                "entity2": "task3.task4",
+            },
+            "accountsToBeSynchronized": ["acct1", "acct2"],
+        }
+    }
+
+
+@patch("legacySystsModel.subprocess.call")
+@patch("legacySystsModel._legacy_refresh")
+@patch("legacySystsModel.memory", create=True)
+def test_shutdown(mock_memory_patch, mock_legacy_refresh, mock_subprocess, mock_memory):
+    """Test the shutdown function."""
+    mock_memory_patch.__getitem__.side_effect = mock_memory.__getitem__
     
-    @patch('datetime.datetime')
-    def test_get_previous_working_date(self, mock_datetime):
-        # Mock datetime to return a Wednesday
-        mock_datetime.now.return_value = datetime.datetime(2024, 12, 18)
-        today = mock_datetime.now.return_value
-        expected_date = '20241217'  # Previous working day is Tuesday (2024-12-17)
+    config = {"server": "test_server"}
+    acct_mapping = {"acct1": "entity1", "acct2": "entity2"}
+    region = "region"
 
-        # Properly construct relative weekday calculation
-        previous_working_day = rrule(
-            WEEKLY, byweekday=(0, 1, 2, 3, 4),  # Monday to Friday
-            dtstart=today + relativedelta(weekday=FR(-1)),
-            count=1
-        )[0].strftime('%Y%m%d')
+    try:
+        shutdown(config, acct_mapping, region)
+    except Exception as e:
+        pytest.fail(f"Function raised an exception: {e}")
 
-        result = script.get_previous_working_date()
-        self.assertEqual(result, expected_date)
+    # Check if _legacy_refresh is called for each system in systs_list
+    assert mock_legacy_refresh.call_count == len(mock_memory["region"]["systs_list"])
 
-    @patch('subprocess.call')
-    @patch('os.path.join')
-    def test_sync_and_clean_vox_eod_dump_file(self, mock_path_join, mock_subprocess_call):
-        # Setup
-        mock_path_join.side_effect = lambda *args: '/'.join(args)
-        mock_subprocess_call.return_value = 0
-        
-        # Input
-        from_date = '20241216'
-        to_date = '20241218'
-        input_dir = '/dummy/dir'
-        keep_days = 5
-        
-        # Call the function
-        script.sync_and_clean_vox_eod_dump_file(from_date, to_date, input_dir, keep_days)
+    # Check if subprocess.call is triggered for PKRouter refresh
+    assert mock_subprocess.call_count > 0
+    mock_subprocess.assert_any_call(
+        f"netAdminCmd -t 60 pkr1 PKRouter reload", shell=True
+    )
+    mock_subprocess.assert_any_call(
+        f"netAdminCmd -t 60 pkr2 PKRouter reload", shell=True
+    )
 
-        # Verifications
-        clean_cmd = f'{script.FIND} /dummy/dir -print -mtime +5 -exec /bin/rm -f {{}} ;'
-        mkdir_cmd = f'/bin/mkdir -p /dummy/dir/2024/12/18'
-        rsync_cmd = f'/usr/bin/rsync -trp /dummy/dir /dummy/dir/2024/12/18'
-        
-        # Assert subprocess was called with the expected commands
-        mock_subprocess_call.assert_any_call(clean_cmd, shell=True)
-        mock_subprocess_call.assert_any_call(mkdir_cmd, shell=True)
-        mock_subprocess_call.assert_any_call(rsync_cmd, shell=True)
-        self.assertEqual(mock_subprocess_call.call_count, 3)
+    # Check if subprocess.call is triggered for entityMapping refresh
+    mock_subprocess.assert_any_call(
+        f"netAdminCmd task1 reloadAcctInfo", shell=True
+    )
+    mock_subprocess.assert_any_call(
+        f"netAdminCmd task3 reloadAcctInfo", shell=True
+    )
 
-    @patch('argparse.ArgumentParser.parse_args')
-    @patch('preSyncEodDumpFile.get_previous_working_date')
-    @patch('preSyncEodDumpFile.sync_and_clean_vox_eod_dump_file')
-    def test_main_function(self, mock_sync, mock_get_prev_date, mock_parse_args):
-        # Mock CLI arguments
-        mock_parse_args.return_value = MagicMock(i='/dummy/input', k=3)
-        mock_get_prev_date.return_value = '20241217'
-        
-        # Call main
-        script.main()
-        
-        # Verify calls
-        mock_get_prev_date.assert_called_once()
-        mock_sync.assert_called_once_with('20241217', unittest.mock.ANY, '/dummy/input', 3)
-
-if __name__ == '__main__':
-    unittest.main()
+    # Check if subprocess.call is triggered for account synchronization
+    mock_subprocess.assert_any_call(
+        f"netAdminCmd task1 synchronizeAccount acct1", shell=True
+    )
+    mock_subprocess.assert_any_call(
+        f"netAdminCmd task3 synchronizeAccount acct2", shell=True
+    )
